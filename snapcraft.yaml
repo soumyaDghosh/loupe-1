@@ -1,15 +1,17 @@
-name: loupe # you probably want to 'snapcraft register <name>'
-base: core22 # the base snap is the execution environment for this snap
+name: loupe
+base: core22
 adopt-info: loupe
-grade: devel # must be 'stable' to release into candidate/stable channels
-confinement: devmode # use 'strict' once you have the right plugs and slots
+grade: stable
+confinement: strict
+
 layout:
   /usr/share/loupe:
     symlink: $SNAP/usr/share/loupe
+
 parts:    
   gtk4:
     source: https://gitlab.gnome.org/GNOME/gtk.git
-    source-commit: '10825cdc720d15c4185c8d7c3ce180f227498c94'
+    source-tag: 4.11.3
 # ext:updatesnap
 #   version-format:
 #     ignore-odd-minor: true
@@ -17,8 +19,9 @@ parts:
     plugin: meson
     meson-parameters:
       - --prefix=/usr
+      - -Dbuildtype=release
       - -Doptimization=3
-      - -Ddebug=true
+      - -Ddebug=false
       - -Dbroadway-backend=false
       - -Dx11-backend=true
       - -Dwayland-backend=true
@@ -50,47 +53,40 @@ parts:
       - libxi-dev
       - libxkbfile-dev
       - libxml2-utils
+      - libstemmer-dev
+      - libsystemd-dev
+      - libappstream-dev
+      - gperf
+      - xsltproc
     stage:
       - -usr/bin/wayland-scanner
       - -usr/lib/*/libwayland-client.so.0.20.0
       - -usr/lib/*/libwayland-server.so.0.20.0
+
   libadwaita:
     after: [ gtk4 ]
     source: https://gitlab.gnome.org/GNOME/libadwaita.git
-    source-commit: 'a97fa1541229271610ce47a4a1dcea4c0340b84c'
+    source-commit: '5c3245dbb7bb6febfa4656616bd2506041ba7d5f'
+    #source-commit: 'c9e7aba26e1b5bc68920c7c07ce5fd0b422a2ece'
     source-depth: 1
     plugin: meson
     meson-parameters:
       - --prefix=/usr
+      - -Dbuildtype=release
       - -Doptimization=3
-      - -Ddebug=true
-      - -Dintrospection=enabled
+      - -Ddebug=false
+      - -Dintrospection=disabled
       - -Dvapi=true
       - -Dtests=false
       - -Dexamples=false
+      - -Dgtk_doc=false
     build-environment:
       - PKG_CONFIG_PATH: $CRAFT_STAGE/usr/lib/$CRAFT_ARCH_TRIPLET/pkgconfig:$PKG_CONFIG_PATH
     build-packages:
       - sassc
-  glib:
-    source: https://gitlab.gnome.org/GNOME/glib.git
-    source-tag: '2.76.1'
-# ext:updatesnap
-#   version-format:
-#     ignore-odd-minor: true
-    source-depth: 1
-    plugin: meson
-    meson-parameters:
-      - --prefix=/usr
-      - -Doptimization=3
-      - -Dtests=false
-    override-build: |
-      set -eux
+    override-pull: |
       craftctl default
-      mkdir -p $CRAFT_PART_INSTALL/usr/lib/$CRAFT_ARCH_TRIPLET/glib-2.0/
-      cp $CRAFT_PART_INSTALL/usr/bin/{gio-querymodules,glib-compile-schemas} $CRAFT_PART_INSTALL/usr/lib/$CRAFT_ARCH_TRIPLET/glib-2.0/
-    build-packages:
-      - libmount-dev
+      sed -i.bak 's|Wformat-nonliteral|Wno-format-nonliteral|g' meson.build
       
   rustup:
     plugin: nil
@@ -111,12 +107,22 @@ parts:
     override-prime: |
       echo 'Skip Prime'
 
+  heif:
+    source: https://github.com/strukturag/libheif.git
+    source-tag: 'v1.14.2'
+    source-depth: 1
+    plugin: cmake
+    cmake-parameters:
+      - -DCMAKE_INSTALL_PREFIX=/usr
+      - -Doptimization=3
+      - -Ddebug=false
+
   loupe:
-    after: [ rustup, glib, libadwaita ]
+    after: [ rustup, libadwaita, heif ]
     # See 'snapcraft plugins'
     plugin: meson
     source: https://gitlab.gnome.org/GNOME/Incubator/loupe.git
-    source-tag: '44.3'
+    source-tag: '44.2'
     build-environment:
       - RUSTUP_HOME: $CRAFT_STAGE/usr/share/rust
       - CARGO_HOME: $CRAFT_STAGE/usr/share/rust
@@ -125,21 +131,36 @@ parts:
     build-packages:
       - libyaml-dev
       - libxmlb-dev
-      - libgstreamer1.0-dev
-      - libgstreamer-plugins-base1.0-dev
-      - libgstreamer-plugins-bad1.0-dev
     meson-parameters:
       - --prefix=/usr
       - -Doptimization=3
     parse-info: [ usr/share/metainfo/org.gnome.Loupe.metainfo.xml ]
+    override-pull: |
+      craftctl default
+      sed -i.bak 's|2.12.0|2.12|g' meson.build
+
+  libraries:
+    plugin: nil
+    stage-packages:
+      - libx265-199
+      - libde265-0
+      - libdav1d5
+      - libaom3
+      - libnuma1
+    prime:
+      - usr/lib/*/lib*265.so.*
+      - usr/lib/*/libdav1d.so.*
+      - usr/lib/*/libaom.so.*
+      - usr/lib/*/libnuma.so.*
 
 slots:
-  snapshot:
+  loupe:
     interface: dbus
     bus: session
     name: org.gnome.Loupe
+
 apps:
-  snapshot:
+  loupe:
     command: usr/bin/loupe
     desktop: usr/share/applications/org.gnome.Loupe.desktop
     extensions: [ gnome ]
